@@ -1,0 +1,84 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import random
+from heapq import heappop, heappush
+
+image_path = "Map.jpg"
+
+def load_topo_map(image_path):
+    image = cv2.imread("Map.jpg", cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        raise FileNotFoundError(f"Error: Could not load image '{image_path}'. Check the file path.")
+    return image
+
+def scale_coordinates(coord, original_shape, grid_size):
+    return (int(coord[0] * original_shape[0] / grid_size[0]),
+            int(coord[1] * original_shape[1] / grid_size[1]))
+
+def d_star(grid, start, goal):
+    def cost(current, next_node):
+        h1, h2 = grid[current], grid[next_node]
+        return 1 + abs(h2 - h1)
+
+    rows, cols = grid.shape
+    open_list = [(0, start)]
+    came_from = {}
+    g_score = {start: 0}
+
+    while open_list:
+        current_cost, current = heappop(open_list)
+        if current == goal:
+            path = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            return path[::-1]
+
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            next_node = (current[0] + dx, current[1] + dy)
+            if 0 <= next_node[0] < rows and 0 <= next_node[1] < cols:
+                new_cost = g_score[current] + cost(current, next_node)
+                if next_node not in g_score or new_cost < g_score[next_node]:
+                    g_score[next_node] = new_cost
+                    heappush(open_list, (new_cost, next_node))
+                    came_from[next_node] = current
+    return None
+
+def select_random_points(grid_size):
+    x1, y1 = random.randint(0, grid_size[0]-1), random.randint(0, grid_size[1]-1)
+    x2, y2 = random.randint(0, grid_size[0]-1), random.randint(0, grid_size[1]-1)
+    return (x1, y1), (x2, y2)
+
+def plot_path_on_map(original_map, path, start, goal, grid_size):
+    path_img = cv2.cvtColor(original_map, cv2.COLOR_GRAY2BGR)
+    original_shape = original_map.shape
+    scaled_path = [scale_coordinates(coord, original_shape, grid_size) for coord in path]
+    start_scaled = scale_coordinates(start, original_shape, grid_size)
+    goal_scaled = scale_coordinates(goal, original_shape, grid_size)
+
+    for i in range(len(scaled_path) - 1):
+        cv2.line(path_img, scaled_path[i][::-1], scaled_path[i + 1][::-1], (0, 0, 255), 2)
+    
+    cv2.circle(path_img, start_scaled[::-1], 6, (255, 0, 0), -1)
+    cv2.circle(path_img, goal_scaled[::-1], 6, (0, 255, 0), -1)
+
+    plt.imshow(cv2.cvtColor(path_img, cv2.COLOR_BGR2RGB))
+    plt.title("Optimal Path on Original Topographic Map")
+    plt.axis("off")
+    plt.show()
+
+if __name__ == "__main__":
+    image_path = "Map.jpg"
+    heightmap = load_topo_map(image_path)
+    grid_size = (100, 100)
+    heightmap_resized = cv2.resize(heightmap, grid_size, interpolation=cv2.INTER_NEAREST)
+    heightmap_resized = heightmap_resized.astype(np.float32) / 255.0
+    start, goal = select_random_points(grid_size)
+    print(f"Start Point: {start}, Goal Point: {goal}")
+    path = d_star(heightmap_resized, start, goal)
+    if path:
+        print("Path Found!")
+        plot_path_on_map(heightmap, path, start, goal, grid_size)
+    else:
+        print("No Path Found!")
