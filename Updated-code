@@ -1,0 +1,107 @@
+import random
+import time
+import heapq
+from geopy.distance import geodesic
+
+# Simulated Drone Parameters
+SIM_START_GPS = (16.5062, 80.6480, 10)  # Starting GPS coordinates (latitude, longitude, altitude)
+SIM_TARGET_GPS = (16.5075, 80.6500, 10) # Target GPS coordinates
+SIM_DRONE_GPS = list(SIM_START_GPS)  # Mutable list to track drone's current GPS position
+SIM_VELOCITY = 1.0  # Simulated drone velocity (meters per second)
+SIM_OBSTACLE_RADIUS = 5.0  # Radius for obstacle detection in meters
+SIM_LIDAR_OBSTACLE_DISTANCE = 3.0  # Distance threshold for LiDAR obstacle detection
+
+# Simulated Obstacles
+SIM_CAMERA_OBSTACLES = [(16.5068, 80.6490, 10)]  # List to store simulated camera obstacles
+
+def simulate_move_to_location(target_lat, target_lon, target_alt=10, velocity=SIM_VELOCITY):
+    """Simulates drone movement towards a target location."""
+    target = (target_lat, target_lon, target_alt)
+    current = tuple(SIM_DRONE_GPS)
+    distance = geodesic(current[:2], target[:2]).meters  # Calculate distance in meters
+    time_to_move = distance / velocity  # Time required based on velocity
+    steps = max(10, int(distance / 0.5))  # Dynamic step count for smooth movement
+    dlat = (target_lat - current[0]) / steps
+    dlon = (target_lon - current[1]) / steps
+    dalt = (target_alt - current[2]) / steps
+    
+    for _ in range(steps):
+        SIM_DRONE_GPS[0] += dlat
+        SIM_DRONE_GPS[1] += dlon
+        SIM_DRONE_GPS[2] += dalt
+        time.sleep(time_to_move / steps)
+    
+    print(f"Moved to: {SIM_DRONE_GPS}")
+
+def simulate_detect_obstacle():
+    """Simulates obstacle detection using a camera."""
+    for obstacle in SIM_CAMERA_OBSTACLES:
+        if geodesic(SIM_DRONE_GPS[:2], obstacle[:2]).meters < SIM_OBSTACLE_RADIUS:
+            print("Obstacle detected by camera!")
+            return True
+    return False
+
+def simulate_get_lidar_data():
+    """Simulates LiDAR data acquisition."""
+    distance_to_target = geodesic(SIM_DRONE_GPS[:2], SIM_TARGET_GPS[:2]).meters
+    if distance_to_target < SIM_LIDAR_OBSTACLE_DISTANCE:
+        print("Obstacle detected by LiDAR!")
+        return SIM_LIDAR_OBSTACLE_DISTANCE / 2
+    return random.uniform(5, 10)  # Random value to simulate no obstacle
+
+def simulate_hybrid_a_star(start, goal, obstacles=None):
+    """Simulates a simplified Hybrid A* path planning algorithm."""
+    if obstacles is None:
+        obstacles = set()
+    open_list = [(0, start)]
+    came_from = {}
+    g_score = {start: 0}
+    f_score = {start: geodesic(start[:2], goal[:2]).meters}
+
+    while open_list:
+        _, current = heapq.heappop(open_list)
+        if geodesic(current[:2], goal[:2]).meters < 1.0:
+            path = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            return path[::-1]
+
+        for dlat, dlon, dalt in [(0.00005, 0, 0), (-0.00005, 0, 0), (0, 0.00005, 0), (0, -0.00005, 0), (0, 0, 0.5), (0, 0, -0.5)]:
+            neighbor = (current[0] + dlat, current[1] + dlon, max(5, min(50, current[2] + dalt)))
+            if any(geodesic(neighbor[:2], obs[:2]).meters < SIM_OBSTACLE_RADIUS for obs in obstacles):
+                continue
+
+            temp_g_score = g_score[current] + geodesic(current[:2], neighbor[:2]).meters
+            if temp_g_score < g_score.get(neighbor, float('inf')):
+                came_from[neighbor] = current
+                g_score[neighbor] = temp_g_score
+                f_score[neighbor] = temp_g_score + geodesic(neighbor[:2], goal[:2]).meters
+                heapq.heappush(open_list, (f_score[neighbor], neighbor))
+    return []
+
+def simulate_autonomous_navigation():
+    """Simulates the drone's autonomous navigation."""
+    obstacles = set()
+    while True:
+        if simulate_detect_obstacle() or simulate_get_lidar_data() < 3.0:
+            print("Recalculating Path...")
+            obstacles.add(tuple(SIM_DRONE_GPS))
+            new_path = simulate_hybrid_a_star(tuple(SIM_DRONE_GPS), SIM_TARGET_GPS, obstacles)
+            
+            if new_path:
+                for waypoint in new_path:
+                    simulate_move_to_location(waypoint[0], waypoint[1], waypoint[2])
+                    if geodesic(SIM_DRONE_GPS[:2], SIM_TARGET_GPS[:2]).meters < 1.0:
+                        print("Target Reached!")
+                        return
+                print("Path Followed.")
+            else:
+                print("No clear path! Hovering.")
+        else:
+            simulate_move_to_location(SIM_TARGET_GPS[0], SIM_TARGET_GPS[1], SIM_TARGET_GPS[2])
+            
+
+# Start simulation
+simulate_autonomous_navigation()
+print("Simulation Complete.")
